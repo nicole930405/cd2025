@@ -67,6 +67,14 @@ int is_space(char c){
     return c == ' ' || c == '\n' || c == '\t';
 }//要忽略的
 
+typedef enum {
+    START,
+    ID,
+    NUMBER,
+    OPERATOR,
+    DONE
+} State;
+
 const char* check_keyword(const char* str) {
     if (strcmp(str, "int") == 0) return "TYPE_TOKEN";
     if (strcmp(str, "main") == 0) return "MAIN_TOKEN";
@@ -83,71 +91,95 @@ int main() {
     //read itself
     FILE* file = fopen("test.c", "r");
 
-    int in_char;
+    State state = START;
     int c;
+    char buffer[128];
+    int idx = 0;
 
-    while ((in_char = fgetc(file)) != EOF) {
-        if (is_space(in_char)) //空格
-            continue;
-        // ID or keyword
-        if (is_alpha(in_char) || in_char == '_') { //是字母或底線
-            char buffer[128];
-            int idx = 0;
-            buffer[idx++] = in_char;
+    while ((c = fgetc(file)) != EOF) {
+        switch (state) {
+            case START:
+                if (is_space(c)) {
+                    continue;
+                } else if (is_alpha(c) || c == '_') {
+                    state = ID;
+                    buffer[idx++] = c;
+                } else if (is_digit(c)) {
+                    state = NUMBER;
+                    buffer[idx++] = c;
+                } else {
+                    state = OPERATOR;
+                    buffer[idx++] = c;
+                }
+                break;
 
-            while ((c = fgetc(file)), is_alnum(c) || c == '_') {
-                buffer[idx++] = c; //是字母或底線或空白
-            }
-            buffer[idx] = '\0';
-            ungetc(c, file);
+            case ID:
+                if (is_alnum(c) || c == '_') {
+                    buffer[idx++] = c;
+                } else {
+                    buffer[idx] = '\0';
+                    const char* token = check_keyword(buffer);
+                    new_node(&head, buffer, token);
+                    idx = 0;
+                    state = START;
+                    ungetc(c, file); // 回退一個字元
+                }
+                break;
 
+            case NUMBER:
+                if (is_digit(c)) {
+                    buffer[idx++] = c;
+                } else {
+                    buffer[idx] = '\0';
+                    new_node(&head, buffer, "LITERAL_TOKEN");
+                    idx = 0;
+                    state = START;
+                    ungetc(c, file);
+                }
+                break;
+
+            case OPERATOR:
+                buffer[idx] = '\0';
+
+                if ((buffer[0] == '=' && c == '=') ||
+                    (buffer[0] == '<' && c == '=') ||
+                    (buffer[0] == '>' && c == '=')) {
+                    buffer[1] = c;
+                    buffer[2] = '\0';
+
+                    if (strcmp(buffer, "==") == 0) new_node(&head, "==", "EQUAL_TOKEN");
+                    else if (strcmp(buffer, "<=") == 0) new_node(&head, "<=", "LESSEQUAL_TOKEN");
+                    else if (strcmp(buffer, ">=") == 0) new_node(&head, ">=", "GREATEREQUAL_TOKEN");
+                } else {
+                    ungetc(c, file);
+                    if (buffer[0] == '=') new_node(&head, "=", "ASSIGN_TOKEN");
+                    else if (buffer[0] == '<') new_node(&head, "<", "LESS_TOKEN");
+                    else if (buffer[0] == '>') new_node(&head, ">", "GREATER_TOKEN");
+                    else if (buffer[0] == '(') new_node(&head, "(", "LEFTPAREN_TOKEN");
+                    else if (buffer[0] == ')') new_node(&head, ")", "RIGHTPAREN_TOKEN");
+                    else if (buffer[0] == '{') new_node(&head, "{", "LEFTBRACE_TOKEN");
+                    else if (buffer[0] == '}') new_node(&head, "}", "RIGHTBRACE_TOKEN");
+                    else if (buffer[0] == ';') new_node(&head, ";", "SEMICOLON_TOKEN");
+                    else if (buffer[0] == '+') new_node(&head, "+", "PLUS_TOKEN");
+                    else if (buffer[0] == '-') new_node(&head, "-", "MINUS_TOKEN");
+                }
+
+                idx = 0;
+                state = START;
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    if (state == ID || state == NUMBER) {
+        buffer[idx] = '\0';
+        if (state == ID) {
             const char* token = check_keyword(buffer);
             new_node(&head, buffer, token);
-
-        }
-
-        // INT literal
-        else if (is_digit(in_char)) {
-            char buffer[64];
-            int idx = 0;
-            buffer[idx++] = in_char;
-            while ((c = fgetc(file)), is_digit(c)) {
-                buffer[idx++] = c;
-            }
-            buffer[idx] = '\0';
-            ungetc(c, file);
+        } else {
             new_node(&head, buffer, "LITERAL_TOKEN");
-        }
-
-        // Two-char operators
-        else {
-            c = fgetc(file);
-            char op[3] = {0};
-            op[0] = in_char;
-            op[1] = c; 
-            op[2] = '\0';
-
-            if (in_char == '=' && c == '=') {
-                new_node(&head, "==", "EQUAL_TOKEN");
-            } else if (in_char == '<' && c == '=') {
-                new_node(&head,"<=", "LESSEQUAL_TOKEN");
-            } else if (in_char == '>' && c == '=') {
-                printf(">=: GREATEREQUAL_TOKEN\n");
-                new_node(&head, ">=", "GREATEREQUAL_TOKEN");
-            } else {
-                ungetc(c, file);
-                op[1] = '\0';
-                if (in_char == '=') new_node(&head, "=", "ASSIGN_TOKEN");
-                else if (in_char == '<') new_node(&head, "<", "LESS_TOKEN");
-                else if (in_char == '>') new_node(&head, ">", "GREATER_TOKEN");
-                else if (in_char == '(') new_node(&head, "(", "LEFTPAREN_TOKEN");
-                else if (in_char == ')') new_node(&head, ")", "RIGHTPAREN_TOKEN");
-                else if (in_char == '{') new_node(&head, "{", "LEFTBRACE_TOKEN");
-                else if (in_char == '}') new_node(&head, "}", "RIGHTBRACE_TOKEN");
-                else if (in_char == ';') new_node(&head, ";", "SEMICOLON_TOKEN");
-                else if (in_char == '+') new_node(&head, "+", "PLUS_TOKEN");
-                else if (in_char == '-') new_node(&head, "-", "MINUS_TOKEN");
-            }
         }
     }
 
